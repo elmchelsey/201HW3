@@ -13,6 +13,12 @@ class POS_HMM:
         self.emission_probs = self.get_emission_probs()
         self.sentence_count = len(self.tagged_sents)
 
+        # Add log probability calculations during initialization
+        self.log_transition_probs = self._compute_log_probs(self.transition_probs)
+        self.log_emission_probs = self._compute_log_probs(self.emission_probs)
+        self.default_transition_log_prob = math.log(alpha / self.num_tags)
+        self.default_emission_log_prob = math.log(alpha / self.vocab_size)
+
     # First, we need to get all of the tags, their counts, and the number of unique tags
     def get_tags(self):
         # Unigram tag counts
@@ -91,6 +97,15 @@ class POS_HMM:
 
         return emission_probs
     
+    def _compute_log_probs(self, prob_dict):
+        return {
+            outer_key: {
+                inner_key: math.log(prob)
+                for inner_key, prob in inner_dict.items()
+            }
+            for outer_key, inner_dict in prob_dict.items()
+        }
+
 class Viterbi:
     def __init__(self, pos_hmm):
         self.pos_hmm = pos_hmm
@@ -98,23 +113,28 @@ class Viterbi:
     def decode(self, sentence):
         len_sentence = len(sentence)
         tags = self.pos_hmm.tags
-        alpha = self.pos_hmm.alpha
+        
+        # Pre-compute emission probabilities for the sentence
+        emission_probs = [{
+            tag: self.pos_hmm.log_emission_probs[tag].get(word, self.pos_hmm.default_emission_log_prob)
+            for tag in tags
+        } for word in sentence]
 
         dp = [{} for _ in range(len_sentence)]
         backpointer = [{} for _ in range(len_sentence)]
 
-        # Initialize with log probabilities
-        for tag in tags:
-            emission_prob = self.pos_hmm.emission_probs[tag].get(sentence[0], alpha / len(tags))
-            dp[0][tag] = math.log(emission_prob)
-            backpointer[0][tag] = None
+        # Initialize first step
+        dp[0] = {tag: emission_probs[0][tag] for tag in tags}
+        backpointer[0] = {tag: None for tag in tags}
         
+        # Main Viterbi algorithm
         for t in range(1, len_sentence):
             for curr_tag in tags:
+                curr_emission = emission_probs[t][curr_tag]
                 max_prob, best_prev_tag = max(
                     (dp[t-1][prev_tag] + 
-                     math.log(self.pos_hmm.transition_probs[prev_tag].get(curr_tag, alpha / len(tags))) +
-                     math.log(self.pos_hmm.emission_probs[curr_tag].get(sentence[t], alpha / len(tags))),
+                     self.pos_hmm.log_transition_probs.get(prev_tag, {}).get(curr_tag, self.pos_hmm.default_transition_log_prob) +
+                     curr_emission,
                      prev_tag)
                     for prev_tag in tags
                 )
@@ -145,35 +165,35 @@ class Viterbi:
                 transition_prob = self.pos_hmm.transition_probs[prev_tag].get(tag, self.pos_hmm.alpha / len(self.pos_hmm.tags))
                 log_score += math.log(transition_prob)
             
-        return math.exp(log_score)  # Convert back to probability space if needed
+        return log_score
 
 def main():
     datadir = os.path.join("data", "penn-treebank3-wsj", "wsj")
     train, dev, test = load_treebank_splits(datadir)
 
-    # Prepare training data
     train_sentences = [get_token_tag_tuples(sent) for sent in train]
     
-    # Train the HMM
+    # Train and decode the HMM
     start_time = time.time()
     pos_hmm = POS_HMM(tagged_sents=train_sentences)
     viterbi = Viterbi(pos_hmm)
     end_time = time.time()
     print(f"Time taken to train and decode HMM: {end_time - start_time} seconds")
     
-    # Evaluate on dev set
     dev_sentences = [get_token_tag_tuples(sent) for sent in dev]
     dev_predictions = []
     dev_gold = []
     
-    for sentence in dev_sentences:
-        # Extract just the words (without tags) for prediction
-        words = [word for word, tag in sentence]
-
-        predicted_tags = viterbi.decode(words)
+    batch_size = 100
+    for i in range(0, len(dev_sentences), batch_size):
+        batch = dev_sentences[i:i + batch_size]
+        words_batch = [[word for word, tag in sent] for sent in batch]
+        tags_batch = [[tag for word, tag in sent] for sent in batch]
         
-        dev_predictions.extend(predicted_tags)
-        dev_gold.extend([tag for word, tag in sentence])
+        # Process each sentence in the batch
+        for words in words_batch:
+            dev_predictions.extend(viterbi.decode(words))
+        dev_gold.extend([tag for sent_tags in tags_batch for tag in sent_tags])
     
     test_sentences = [get_token_tag_tuples(sent) for sent in test]
     test_predictions = []
