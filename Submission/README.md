@@ -4,10 +4,7 @@
 
 Simply run `python main.py` to train the HMM and evaluate the performance of the model on the test set with the best alpha value found by the tuning process.
 
-## Files
 
-- `main.py`: the main file that contains the HMM implementation and the tuning process.
-- `starter_code.py`: the starter code provided by the instructor. Used mainly to load the data and evaluate the models. The evaluate() function was modified to return the accuracy score.
 
 # Changes to starter code
 
