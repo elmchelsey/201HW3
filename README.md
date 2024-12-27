@@ -1,4 +1,6 @@
-# 201HW3
+# Part of Speech (POS) Tagging using a Hidden Markov Model (HMM) with Viterbi Decoding
+
+An HMM-based POS tagger trained using the Penn Tree Bank (PTB) tagset and the Wall Street Journal (WSJ) section of the PTB corpus. This project was completed as part of my coursework for UCSC's NLP MSc program.
 
 ## Running the code
 
